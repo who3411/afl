@@ -79,6 +79,8 @@
 /* Lots of globals, but mostly for the status UI and other things where it
    really makes no sense to haul them around as function parameters. */
 
+EXP_ST u32 max_line = 0;
+EXP_ST u8  is_line_interest = 0;
 
 EXP_ST u8 *in_dir,                    /* Input directory with test cases  */
           *out_file,                  /* File to fuzz, if any             */
@@ -1348,7 +1350,7 @@ EXP_ST void setup_shm(void) {
   memset(virgin_tmout, 255, MAP_SIZE);
   memset(virgin_crash, 255, MAP_SIZE);
 
-  shm_id = shmget(IPC_PRIVATE, MAP_SIZE, IPC_CREAT | IPC_EXCL | 0600);
+  shm_id = shmget(IPC_PRIVATE, MAP_SIZE + 8, IPC_CREAT | IPC_EXCL | 0600);
 
   if (shm_id < 0) PFATAL("shmget() failed");
 
@@ -2272,7 +2274,7 @@ static u8 run_target(char** argv, u32 timeout) {
      must prevent any earlier operations from venturing into that
      territory. */
 
-  memset(trace_bits, 0, MAP_SIZE);
+  memset(trace_bits, 0, MAP_SIZE + 4);
   MEM_BARRIER();
 
   /* If we're running in "dumb" mode, we can't rely on the fork server
@@ -2422,6 +2424,15 @@ static u8 run_target(char** argv, u32 timeout) {
      very normally and do not have to be treated as volatile. */
 
   MEM_BARRIER();
+
+  /* change linefuzz */
+  if(*(u32*)(trace_bits + MAP_SIZE) > max_line){
+    max_line = *(u32*)(trace_bits + MAP_SIZE);
+	is_line_interest = 1;
+  }else{
+    is_line_interest = 0;
+  }
+  /* change linefuzz */
 
   tb4 = *(u32*)trace_bits;
 
@@ -2588,7 +2599,6 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
     cksum = hash32(trace_bits, MAP_SIZE, HASH_CONST);
 
     if (q->exec_cksum != cksum) {
-
       u8 hnb = has_new_bits(virgin_bits);
       if (hnb > new_bits) new_bits = hnb;
 
@@ -3125,11 +3135,15 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
     /* Keep only if there are new bits in the map, add to queue for
        future fuzzing, etc. */
-
-    if (!(hnb = has_new_bits(virgin_bits))) {
+    hnb = has_new_bits(virgin_bits);
+    if (!hnb) {
       if (crash_mode) total_crashes++;
-      return 0;
-    }    
+	  /* change linefuzz */
+	  if(!is_line_interest){
+        return 0;
+	  }
+	  /* change linefuzz */
+    }
 
 #ifndef SIMPLE_FILES
 
@@ -4284,8 +4298,14 @@ static void show_stats(void) {
 
   }
 
-  SAYF(bV bSTOP "        trim : " cRST "%-37s " bSTG bVR bH20 bH2 bH2 bRB "\n"
-       bLB bH30 bH20 bH2 bH bRB bSTOP cRST RESET_G1, tmp);
+  //SAYF(bV bSTOP "        trim : " cRST "%-37s " bSTG bVR bH20 bH2 bH2 bRB "\n"
+  //     bLB bH30 bH20 bH2 bH bRB bSTOP cRST RESET_G1, tmp);
+  /* change show stats */
+  SAYF(bV bSTOP "        trim : " cRST "%-37s " bSTG bVR bH20 bH2 bH2 bRB "\n", tmp);
+  SAYF(bVR bH cCYA bSTOP " linefuzz max params " bSTG bH20 bH10 bH bVL "\n"); // 2+21+32(罫線抜きだと1+21+31)
+  SAYF(bV  cGRA bSTOP "        line : " cRST "%-37d " bSTG bV "\n", max_line); // 2+21+32(罫線抜きだと1+21+31)
+  SAYF(bLB bH30 bH20 bH2 bH bRB bSTOP cRST RESET_G1);
+  /* change show stats */
 
   /* Provide some CPU utilization stats. */
 
